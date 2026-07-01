@@ -27,7 +27,7 @@ def load_data():
     # Convert types
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
     df["LON"] = pd.to_numeric(df["LON"], errors="coerce")
-    df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], errors="coerce")
+    df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
 
     return df
 
