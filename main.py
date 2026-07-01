@@ -43,8 +43,12 @@ target_sid = "2024181N09320"
 storm = df[df["SID"] == target_sid].sort_values(by="ISO_TIME")
 
 st.subheader("Selected Storm Data")
+st.subheader("Storm Name: Tropical Storm BERYL | SID:2024181N09320")
 st.write(storm)
-
+st.write("Nature: Tropical Storm")
+st.write("Basin: North Atlantic")
+st.write("Subbasin: North Atlantic and Carribean")
+st.write("Season: 2024")
 
 
 #USE ctrl_(shift)_b TO START PROGRAM
