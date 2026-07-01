@@ -13,28 +13,38 @@ def download_if_needed():
         st.info("Downloading IBTrACS dataset (first time only)...")
         df = pd.read_csv(URL, low_memory=False)
         df.to_csv(LOCAL_PATH, index=False)
-        return df
     else:
-        return pd.read_csv(LOCAL_PATH, low_memory=False)
+        df = pd.read_csv(LOCAL_PATH, low_memory=False)
+
+    return df
     
 @st.cache_data
 def load_data():
     df = download_if_needed()
 
-    # Drop the second header row (units row)
-    df = df[df["SID"] != "SID"].copy()
+    #Clean bad header row
+    df = df[df["SID"] != "sid"].copy()
 
-    # Convert types
+        # Convert types FIRST
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
     df["LON"] = pd.to_numeric(df["LON"], errors="coerce")
     df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
 
     return df
 
-
 st.title("🌪 Hurricane Tracker")
+
+#step 2: Pick ONE storm (for now Tropical storm BERYL- SID= 2024181N09320)
 
 df = load_data()
 
-st.success("Data loaded (from local cache if available)")
-st.write(df.head())
+target_sid = "2024181N09320"
+
+storm = df[df["SID"] == target_sid].sort_values(by="ISO_TIME")
+
+st.subheader("Selected Storm Data")
+st.write(storm)
+
+
+
+#USE ctrl_(shift)_b TO START PROGRAM
