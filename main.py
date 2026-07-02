@@ -83,16 +83,18 @@ def download_if_needed():
 @st.cache_data
 def load_data():
     df = download_if_needed()
-    st.write(list(df.columns))
+    
+    # strip spaces from every column value
+    for col in df.select_dtypes(include="object"):
+        df[col] = df[col].str.strip()    
 
-  
 
     # Convert types FIRST
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
     df["LON"] = pd.to_numeric(df["LON"], errors="coerce")
     df["WMO_WIND"] = pd.to_numeric(df["WMO_WIND"], errors="coerce")
     df["WMO_PRES"] = pd.to_numeric(df["WMO_PRES"], errors="coerce")
-    df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%d/%m/%Y %H:%M", errors="coerce")
+    df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
 
     return df
 
