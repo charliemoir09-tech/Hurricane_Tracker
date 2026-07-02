@@ -127,8 +127,7 @@ def translate_basin(code):
         "SP": "South Pacific",
         "SI": "South Indian",
         "NI": "North Indian",
-        "nan": "Unknown",
-    }.get(code, code)
+    }.get(code, "Unknown")
 
 
 def translate_subbasin(code):
@@ -138,7 +137,7 @@ def translate_subbasin(code):
         "AS": "Arabian Sea",
         "CS": "Caribbean Sea",
         "GM": "Gulf of Mexico",
-    }.get(code, code)
+    }.get(code, "Unknown")
 
 
 def translate_nature(code):
@@ -151,7 +150,7 @@ def translate_nature(code):
         "SS": "Subtropical Storm",
         "LO": "Low Pressure System",
         "WV": "Tropical Wave",
-    }.get(code, code)
+    }.get(code, "Unknown")
 
 df = load_data()
 
@@ -298,4 +297,4 @@ with col1:
     st.write("Nature:", translate_nature(storm["NATURE"].iloc[0]))
     st.write("Basin:", translate_basin(storm["BASIN"].iloc[0]))
     st.write("Subbasin:", translate_subbasin(storm["SUBBASIN"].iloc[0]))
-    st.write("Season:", int(storm["SEASON"].iloc[0]))
+    st.write("Season:", str(int(storm["SEASON"].iloc[0])))
