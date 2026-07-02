@@ -4,6 +4,7 @@ import os
 import plotly.graph_objects as go
 from datetime import timedelta
 import requests
+import csv
 
 
 URL = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.ALL.list.v04r01.csv"
@@ -15,58 +16,69 @@ IBTRACS_COLUMNS = [
     "ISO_TIME", "NATURE", "LAT", "LON", "WMO_WIND", "WMO_PRES",
 ]
 
+
 def download_if_needed():
     if not os.path.exists(LOCAL_PATH):
-        TEMP_RAW_PATH = "ibtracs_raw_temp.csv"
-
         response = requests.get(URL, stream=True)
         response.raise_for_status()
         total_size = int(response.headers.get("content-length", 0))
 
         progress_bar = st.progress(0, text="Downloading IBTrACS dataset (first time only)...")
-        bytes_downloaded = 0
+        bytes_seen = 0
+        rows_written = 0
+        column_indices = None
+        season_idx = IBTRACS_COLUMNS.index("SEASON")
 
-        # Stream the full raw file to a temporary path — this is never
-        # kept around long-term, just used as scratch space to read from
-        with open(TEMP_RAW_PATH, "wb") as f:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
-                f.write(chunk)
-                bytes_downloaded += len(chunk)
+        with open(LOCAL_PATH, "w", newline="", encoding="utf-8") as out_f:
+            writer = csv.writer(out_f)
+            writer.writerow(IBTRACS_COLUMNS)
+
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+
+                bytes_seen += len(line.encode("utf-8")) + 1  # +1 for the stripped newline
+                row = next(csv.reader([line]))
+
+                # First real line is the header — use it to find our
+                # chosen columns' positions in the full 170+ column file
+                if column_indices is None:
+                    column_indices = [row.index(col) for col in IBTRACS_COLUMNS]
+                    progress_bar.progress(0.0, text="Downloading & filtering...")
+                    continue
+
+                try:
+                    filtered_row = [row[i] for i in column_indices]
+                except IndexError:
+                    continue  # malformed row, skip
+
+                # SEASON is a genuine year on real rows, but the units row
+                # (right below the header) has "Year" here instead — this
+                # int(float(...)) attempt fails on that row and skips it
+                try:
+                    season_num = int(float(filtered_row[season_idx]))
+                except ValueError:
+                    continue
+
+                if season_num < 2000:
+                    continue
+
+                writer.writerow(filtered_row)
+                rows_written += 1
+
                 if total_size > 0:
-                    percent_complete = min(bytes_downloaded / total_size, 1.0)
-                    mb_done = bytes_downloaded / (1024 * 1024)
+                    percent_complete = min(bytes_seen / total_size, 1.0)
+                    mb_done = bytes_seen / (1024 * 1024)
                     mb_total = total_size / (1024 * 1024)
                     progress_bar.progress(
                         percent_complete,
-                        text=f"Downloading IBTrACS dataset... {mb_done:.0f} MB / {mb_total:.0f} MB",
+                        text=f"Downloading & filtering... {mb_done:.0f} MB / {mb_total:.0f} MB — {rows_written} rows kept",
                     )
 
-        progress_bar.progress(1.0, text="Filtering and saving dataset...")
-
-        # Read only the columns we need from the raw file
-        df = pd.read_csv(TEMP_RAW_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
-
-        # The row directly below the header is a units row (e.g. "Year",
-        # "kts", "mb"), not real data. Coercing SEASON to numeric turns
-        # that row's "Year" entry into NaN, and any row before 2000
-        # into a value we can filter out in the same step.
-        df["SEASON"] = pd.to_numeric(df["SEASON"], errors="coerce")
-        df = df.dropna(subset=["SEASON"])
-        df = df[df["SEASON"] >= 2000].copy()
-        df["SEASON"] = df["SEASON"].astype(int)
-
-        # Save only the filtered, narrowed data locally
-        df.to_csv(LOCAL_PATH, index=False)
-
-        # Discard the full raw download — only the filtered file is kept
-        os.remove(TEMP_RAW_PATH)
-
         progress_bar.empty()
-    else:
-        df = pd.read_csv(LOCAL_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
 
-    return df
-    
+    df = pd.read_csv(LOCAL_PATH, low_memory=False)
+    return df    
 
 @st.cache_data
 def load_data():
