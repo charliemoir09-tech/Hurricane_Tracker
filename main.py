@@ -63,9 +63,10 @@ def download_if_needed():
                     percent_complete = min(bytes_seen / total_size, 1.0)
                     mb_done = bytes_seen / (1024 * 1024)
                     mb_total = total_size / (1024 * 1024)
+
                     progress_bar.progress(
                         percent_complete,
-                        text=f"Downloading & filtering... {mb_done:.0f} MB / {mb_total:.0f} MB — {rows_written} rows kept",
+                        text=f"Downloading & filtering... {mb_done:.0f}/{mb_total:.0f} MB — {rows_written} rows",
                     )
 
         progress_bar.empty()
@@ -77,11 +78,9 @@ def download_if_needed():
 def load_data():
     df = download_if_needed()
 
-    # strip whitespace
     for col in df.select_dtypes(include="object"):
         df[col] = df[col].str.strip()
 
-    # convert types
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
     df["LON"] = pd.to_numeric(df["LON"], errors="coerce")
     df["WMO_WIND"] = pd.to_numeric(df["WMO_WIND"], errors="coerce")
@@ -91,13 +90,70 @@ def load_data():
     return df
 
 
+# ================= UI =================
+st.set_page_config(page_title="Hurricane Tracker", layout="wide")
+
 st.title("🌪 Hurricane Tracker")
 
-df = load_data()
 
-# =========================
-# DROPDOWN STORM SELECTOR
-# =========================
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(to bottom, #102a43, #1c3a4a);
+    }
+
+    /* FIX DROPDOWN LOOK */
+    div[data-baseweb="select"] {
+        background-color: rgba(255,255,255,0.9) !important;
+        border-radius: 8px;
+    }
+
+    html, body, .stApp {
+        color: white !important;
+    }
+
+    h1, h2, h3, h4 {
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+def translate_basin(code):
+    return {
+        "NA": "North Atlantic",
+        "SA": "South Atlantic",
+        "WP": "Western Pacific",
+        "EP": "Eastern Pacific",
+        "SP": "South Pacific",
+        "SI": "South Indian",
+        "NI": "North Indian",
+        "nan": "Unknown",
+    }.get(code, code)
+
+
+def translate_subbasin(code):
+    return {
+        "MM": "Main Monsoon",
+        "BB": "Bay of Bengal",
+        "AS": "Arabian Sea",
+        "CS": "Caribbean Sea",
+        "GM": "Gulf of Mexico",
+    }.get(code, code)
+
+
+def translate_nature(code):
+    return {
+        "TS": "Tropical Storm",
+        "TD": "Tropical Depression",
+        "HU": "Hurricane / Typhoon",
+        "EX": "Extratropical",
+        "SD": "Subtropical Depression",
+        "SS": "Subtropical Storm",
+        "LO": "Low Pressure System",
+        "WV": "Tropical Wave",
+    }.get(code, code)
+
+df = load_data()
 
 storm_options = (
     df[["SID", "NAME"]]
@@ -112,136 +168,134 @@ storm_label_map = {
 }
 
 selected_label = st.selectbox(
-    "Select storm",
-    list(storm_label_map.keys())
+    "Select Storm",
+    ["-- Select a storm --"] + list(storm_label_map.keys())
 )
+
+if selected_label == "-- Select a storm --":
+    st.info("Please select a storm to display the map 🌪")
+    st.stop()
 
 target_sid = storm_label_map[selected_label]
 
-storm = df[df["SID"] == target_sid].sort_values(by="ISO_TIME")
+storm = df[df["SID"] == target_sid].sort_values("ISO_TIME")
+storm_name = storm["NAME"].iloc[0] if not storm.empty else "Unknown"
 
-storm_name = storm["NAME"].iloc[0] if not storm.empty else "Unknown Storm"
-
-st.subheader("Selected Storm Data")
-st.subheader(f"{storm_name} | SID: {target_sid}")
+st.subheader(f"{storm_name} | {target_sid}")
 
 storm_clean = storm.dropna(subset=["LAT", "LON", "ISO_TIME"]).reset_index(drop=True)
 
 if storm_clean.empty:
-    st.warning("No valid track data for this storm.")
-else:
+    st.warning("No valid track data.")
+    st.stop()
 
-    def make_label(row):
-        wind = f"{row['WMO_WIND']:.0f} kts" if pd.notna(row["WMO_WIND"]) else "N/A"
-        pres = f"{row['WMO_PRES']:.0f} mb" if pd.notna(row["WMO_PRES"]) else "N/A"
-        return (
-            f"Time: {row['ISO_TIME'].strftime('%b %d, %Y %H:%M UTC')}<br>"
-            f"Lat: {row['LAT']:.1f}   Lon: {row['LON']:.1f}<br>"
-            f"Wind: {wind}   Pressure: {pres}"
+
+def make_label(row):
+    wind = f"{row['WMO_WIND']:.0f} kts" if pd.notna(row["WMO_WIND"]) else "N/A"
+    pres = f"{row['WMO_PRES']:.0f} mb" if pd.notna(row["WMO_PRES"]) else "N/A"
+
+    return (
+        f"{row['ISO_TIME'].strftime('%b %d %H:%M UTC')}<br>"
+        f"Lat {row['LAT']:.1f} Lon {row['LON']:.1f}<br>"
+        f"Wind {wind} Pressure {pres}"
+    )
+
+
+fig = go.Figure()
+
+fig.add_trace(go.Scattergeo(
+    lon=storm_clean["LON"],
+    lat=storm_clean["LAT"],
+    mode="lines",
+    line=dict(width=2, color="white"),
+    name="Track"
+))
+
+fig.add_trace(go.Scattergeo(
+    lon=[storm_clean.loc[0, "LON"]],
+    lat=[storm_clean.loc[0, "LAT"]],
+    mode="markers",
+    marker=dict(size=12, color="red"),
+    name="Current"
+))
+
+
+frames = []
+for i, row in storm_clean.iterrows():
+    frames.append(go.Frame(
+        name=str(i),
+        data=[go.Scattergeo(lon=[row["LON"]], lat=[row["LAT"]])],
+        traces=[1],
+        layout=go.Layout(
+            annotations=[dict(
+                text=make_label(row),
+                xref="paper",
+                yref="paper",
+                x=0.02,
+                y=0.98,
+                showarrow=False,
+                bgcolor="rgba(0,0,0,0.5)",
+                font=dict(color="white")
+            )]
         )
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Scattergeo(
-        lon=storm_clean["LON"],
-        lat=storm_clean["LAT"],
-        mode="lines",
-        line=dict(width=2, color="gray"),
-        name="Full track"
     ))
 
-    fig.add_trace(go.Scattergeo(
-        lon=[storm_clean.loc[0, "LON"]],
-        lat=[storm_clean.loc[0, "LAT"]],
-        mode="markers",
-        marker=dict(size=14, color="red"),
-        name="Current position"
-    ))
+fig.frames = frames
 
-    frames = []
-    for i, row in storm_clean.iterrows():
-        frames.append(go.Frame(
-            name=str(i),
-            data=[go.Scattergeo(lon=[row["LON"]], lat=[row["LAT"]])],
-            traces=[1],
-            layout=go.Layout(
-                annotations=[dict(
-                    text=make_label(row),
-                    xref="paper", yref="paper",
-                    x=0.02, y=0.98,
-                    xanchor="left", yanchor="top",
-                    showarrow=False,
-                    align="left",
-                    bgcolor="rgba(255,255,255,0.85)",
-                    bordercolor="gray",
-                    borderwidth=1,
-                    font=dict(size=13),
-                )]
+
+fig.update_layout(
+    geo=dict(
+        projection_type="natural earth",
+        showland=True,
+        landcolor="rgb(40, 60, 40)",
+        showocean=True,
+        oceancolor="rgb(10,25,45)",
+        showcountries=True,
+        showcoastlines=True,
+        coastlinecolor="rgba(255,255,255,0.3)",
+        fitbounds="locations",
+    ),
+
+    height=600,
+    margin=dict(l=0, r=0, t=0, b=0),
+
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+
+    modebar=dict(
+        orientation="v",
+        bgcolor="rgba(0,0,0,0.2)"
+    ),
+
+    sliders=[dict(
+        active=0,
+        currentvalue=dict(font=dict(color="white")),
+        bgcolor="rgba(255,255,255,0.1)",
+        steps=[
+            dict(
+                method="animate",
+                args=[[str(i)], dict(mode="immediate")],
+                label=row["ISO_TIME"].strftime("%b %d %H:%M"),
             )
-        ))
+            for i, row in storm_clean.iterrows()
+        ],
+    )],
+)
 
-    fig.frames = frames
 
-    fig.update_layout(
-        annotations=[dict(
-            text=make_label(storm_clean.loc[0]),
-            xref="paper", yref="paper",
-            x=0.02, y=0.98,
-            xanchor="left", yanchor="top",
-            showarrow=False,
-            align="left",
-            bgcolor="rgba(255,255,255,0.85)",
-            bordercolor="gray",
-            borderwidth=1,
-            font=dict(size=13),
-        )]
+col1, col2 = st.columns([1, 2])  # left smaller, right bigger
+
+with col2:
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={"displayModeBar": False}
     )
 
-    fig.update_layout(
-        geo=dict(
-            projection_type="natural earth",
-            showland=True,
-            landcolor="rgb(235, 235, 235)",
-            showcountries=True,
-            showcoastlines=True,
-            fitbounds="locations",
-        ),
-        height=550,
-        margin=dict(l=0, r=0, t=0, b=0),
-        sliders=[dict(
-            active=0,
-            currentvalue=dict(prefix="Showing: ", font=dict(size=13)),
-            pad=dict(t=40),
-            steps=[
-                dict(
-                    method="animate",
-                    args=[
-                        [str(i)],
-                        dict(
-                            mode="immediate",
-                            frame=dict(duration=0, redraw=True),
-                            transition=dict(duration=0),
-                        ),
-                    ],
-                    label=row["ISO_TIME"].strftime("%b %d, %H:%M"),
-                )
-                for i, row in storm_clean.iterrows()
-            ],
-        )],
-    )
+with col1:
+    st.markdown("### Storm Details")
 
-    st.caption(
-        f"Start: {storm_clean['ISO_TIME'].min().strftime('%b %d, %Y %H:%M UTC')}  |  "
-        f"End: {storm_clean['ISO_TIME'].max().strftime('%b %d, %Y %H:%M UTC')}"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# =========================
-# BOTTOM METADATA (SAFE)
-# =========================
-
-st.write("Nature:", storm_clean["NATURE"].iloc[0] if not storm_clean.empty else "N/A")
-st.write("Basin:", storm["BASIN"].iloc[0] if not storm.empty else "N/A")
-st.write("Subbasin:", storm["SUBBASIN"].iloc[0] if not storm.empty else "N/A")
-st.write("Season:", int(storm["SEASON"].iloc[0]) if not storm.empty else "N/A")
+    st.write("Nature:", translate_nature(storm["NATURE"].iloc[0]))
+    st.write("Basin:", translate_basin(storm["BASIN"].iloc[0]))
+    st.write("Subbasin:", translate_subbasin(storm["SUBBASIN"].iloc[0]))
+    st.write("Season:", int(storm["SEASON"].iloc[0]))
