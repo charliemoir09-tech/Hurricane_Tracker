@@ -19,7 +19,8 @@ def download_if_needed():
         df = pd.read_csv(LOCAL_PATH, low_memory=False)
 
     return df
-    
+
+
 @st.cache_data
 def load_data():
     df = download_if_needed()
@@ -30,8 +31,10 @@ def load_data():
     # Convert types FIRST
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
     df["LON"] = pd.to_numeric(df["LON"], errors="coerce")
+    df["WMO_WIND"] = pd.to_numeric(df["WMO_WIND"], errors="coerce")
+    df["WMO_PRES"] = pd.to_numeric(df["WMO_PRES"], errors="coerce")
     df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%d/%m/%Y %H:%M", errors="coerce")
- 
+
     return df
 
 st.title("🌪 Hurricane Tracker")
@@ -47,47 +50,24 @@ storm = df[df["SID"] == target_sid].sort_values(by="ISO_TIME")
 st.subheader("Selected Storm Data")
 st.subheader("Storm Name: Tropical Storm BERYL | SID:2024181N09320")
 
-# Replace: st.write(storm)
-
 storm_clean = storm.dropna(subset=["LAT", "LON", "ISO_TIME"]).reset_index(drop=True)
 
 if storm_clean.empty:
     st.warning("No valid track data for this storm.")
 else:
-    # Time bounds for the slider, as native Python datetimes
-    start_time = storm_clean["ISO_TIME"].min().to_pydatetime()
-    end_time = storm_clean["ISO_TIME"].max().to_pydatetime()
-
-    # Labels showing the full range of the storm, above the slider
-    label_col1, label_col2 = st.columns(2)
-    with label_col1:
-        st.caption(f"Start: {start_time.strftime('%b %d, %Y %H:%M UTC')}")
-    with label_col2:
-        st.markdown(
-            f"<div style='text-align: right; font-size: 0.85rem; color: gray;'>"
-            f"End: {end_time.strftime('%b %d, %Y %H:%M UTC')}</div>",
-            unsafe_allow_html=True,
+    def make_label(row):
+        """Text shown inside the chart for a given storm observation."""
+        wind = f"{row['WMO_WIND']:.0f} kts" if pd.notna(row["WMO_WIND"]) else "N/A"
+        pres = f"{row['WMO_PRES']:.0f} mb" if pd.notna(row["WMO_PRES"]) else "N/A"
+        return (
+            f"Time: {row['ISO_TIME'].strftime('%b %d, %Y %H:%M UTC')}<br>"
+            f"Lat: {row['LAT']:.1f}   Lon: {row['LON']:.1f}<br>"
+            f"Wind: {wind}   Pressure: {pres}"
         )
-
-    # Slider operates on actual datetimes; the thumb label is formatted
-    # to show the currently-selected time as you drag it
-    selected_time = st.slider(
-        "Track position",
-        min_value=start_time,
-        max_value=end_time,
-        value=start_time,
-        step=timedelta(hours=3),
-        format="MMM DD, YYYY - HH:mm",
-        label_visibility="collapsed",
-    )
-
-    # Snap to the nearest real observation to the selected slider time
-    nearest_idx = (storm_clean["ISO_TIME"] - selected_time).abs().idxmin()
-    current = storm_clean.loc[nearest_idx]
 
     fig = go.Figure()
 
-    # Full track as a line, for context
+    # Trace 0: full track line, static across all frames
     fig.add_trace(go.Scattergeo(
         lon=storm_clean["LON"],
         lat=storm_clean["LAT"],
@@ -96,15 +76,58 @@ else:
         name="Full track"
     ))
 
-    # The moving dot at the selected timestamp
+    # Trace 1: the moving dot, starts at the first observation
     fig.add_trace(go.Scattergeo(
-        lon=[current["LON"]],
-        lat=[current["LAT"]],
+        lon=[storm_clean.loc[0, "LON"]],
+        lat=[storm_clean.loc[0, "LAT"]],
         mode="markers",
         marker=dict(size=14, color="red"),
         name="Current position"
     ))
 
+    # One frame per real observation. Each frame updates only trace 1
+    # (the dot) plus an on-chart annotation with time/lat/lon/wind/pressure.
+    frames = []
+    for i, row in storm_clean.iterrows():
+        frames.append(go.Frame(
+            name=str(i),
+            data=[go.Scattergeo(lon=[row["LON"]], lat=[row["LAT"]])],
+            traces=[1],
+            layout=go.Layout(
+                annotations=[dict(
+                    text=make_label(row),
+                    xref="paper", yref="paper",
+                    x=0.02, y=0.98,
+                    xanchor="left", yanchor="top",
+                    showarrow=False,
+                    align="left",
+                    bgcolor="rgba(255,255,255,0.85)",
+                    bordercolor="gray",
+                    borderwidth=1,
+                    font=dict(size=13),
+                )]
+            )
+        ))
+    fig.frames = frames
+
+    # Initial annotation, matching frame 0, so it's visible before any drag
+    fig.update_layout(
+        annotations=[dict(
+            text=make_label(storm_clean.loc[0]),
+            xref="paper", yref="paper",
+            x=0.02, y=0.98,
+            xanchor="left", yanchor="top",
+            showarrow=False,
+            align="left",
+            bgcolor="rgba(255,255,255,0.85)",
+            bordercolor="gray",
+            borderwidth=1,
+            font=dict(size=13),
+        )]
+    )
+
+    # Plotly's own slider — lives entirely in the browser, so dragging it
+    # moves the dot instantly with no round-trip to the Streamlit server
     fig.update_layout(
         geo=dict(
             projection_type="natural earth",
@@ -114,17 +137,39 @@ else:
             showcoastlines=True,
             fitbounds="locations",
         ),
-        height=500,
+        height=550,
         margin=dict(l=0, r=0, t=0, b=0),
+        sliders=[dict(
+            active=0,
+            currentvalue=dict(prefix="Showing: ", font=dict(size=13)),
+            pad=dict(t=40),
+            steps=[
+                dict(
+                    method="animate",
+                    args=[
+                        [str(i)],
+                        dict(
+                            mode="immediate",
+                            frame=dict(duration=0, redraw=True),
+                            transition=dict(duration=0),
+                        ),
+                    ],
+                    label=row["ISO_TIME"].strftime("%b %d, %H:%M"),
+                )
+                for i, row in storm_clean.iterrows()
+            ],
+        )],
     )
 
+    st.caption(
+        f"Start: {storm_clean['ISO_TIME'].min().strftime('%b %d, %Y %H:%M UTC')}  |  "
+        f"End: {storm_clean['ISO_TIME'].max().strftime('%b %d, %Y %H:%M UTC')}"
+    )
     st.plotly_chart(fig, use_container_width=True)
-    st.write(f"**Time:** {current['ISO_TIME']}  |  **Lat:** {current['LAT']}  |  **Lon:** {current['LON']}")
 
 st.write("Nature: Tropical Storm")
 st.write("Basin: North Atlantic")
 st.write("Subbasin: North Atlantic and Carribean")
 st.write("Season: 2024")
 
-
-#USE ctrl_(shift)_b TO START PROGRAM
+#use ctrl shift b to start program.
