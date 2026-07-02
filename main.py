@@ -3,20 +3,44 @@ import pandas as pd
 import os
 import plotly.graph_objects as go
 from datetime import timedelta
+import requests
 
 
-URL = "https://data.humdata.org/dataset/96b309bf-cedb-4f63-8ca3-eb56cdcae876/resource/d1b9b02a-53c7-4134-ada5-234efd2efec2/download/ibtracs_all_list_v04r01.csv"
+URL = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.ALL.list.v04r01.csv"
 
-LOCAL_PATH = "2_ibtracs_all_list_v04r01.csv"
+LOCAL_PATH = "ibtracs.ALL.list.v04r01.csv"
 
+IBTRACS_COLUMNS = [
+    "SID", "SEASON", "NUMBER", "BASIN", "SUBBASIN", "NAME",
+    "ISO_TIME", "NATURE", "LAT", "LON", "WMO_WIND", "WMO_PRES",
+]
 
 def download_if_needed():
     if not os.path.exists(LOCAL_PATH):
-        st.info("Downloading IBTrACS dataset (first time only)...")
-        df = pd.read_csv(URL, low_memory=False)
-        df.to_csv(LOCAL_PATH, index=False)
+        response = requests.get(URL, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get("content-length", 0))
+
+        progress_bar = st.progress(0, text="Downloading IBTrACS dataset (first time only)...")
+        bytes_downloaded = 0
+
+        with open(LOCAL_PATH, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
+                f.write(chunk)
+                bytes_downloaded += len(chunk)
+                if total_size > 0:
+                    percent_complete = min(bytes_downloaded / total_size, 1.0)
+                    mb_done = bytes_downloaded / (1024 * 1024)
+                    mb_total = total_size / (1024 * 1024)
+                    progress_bar.progress(
+                        percent_complete,
+                        text=f"Downloading IBTrACS dataset... {mb_done:.0f} MB / {mb_total:.0f} MB",
+                    )
+
+        progress_bar.empty()  # remove the bar once done
+        df = pd.read_csv(LOCAL_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
     else:
-        df = pd.read_csv(LOCAL_PATH, low_memory=False)
+        df = pd.read_csv(LOCAL_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
 
     return df
 
@@ -24,9 +48,9 @@ def download_if_needed():
 @st.cache_data
 def load_data():
     df = download_if_needed()
+    st.write(list(df.columns))
 
-    #Clean bad header row
-    df = df[df["SID"] != "sid"].copy()
+  
 
     # Convert types FIRST
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
