@@ -17,6 +17,8 @@ IBTRACS_COLUMNS = [
 
 def download_if_needed():
     if not os.path.exists(LOCAL_PATH):
+        TEMP_RAW_PATH = "ibtracs_raw_temp.csv"
+
         response = requests.get(URL, stream=True)
         response.raise_for_status()
         total_size = int(response.headers.get("content-length", 0))
@@ -24,7 +26,9 @@ def download_if_needed():
         progress_bar = st.progress(0, text="Downloading IBTrACS dataset (first time only)...")
         bytes_downloaded = 0
 
-        with open(LOCAL_PATH, "wb") as f:
+        # Stream the full raw file to a temporary path — this is never
+        # kept around long-term, just used as scratch space to read from
+        with open(TEMP_RAW_PATH, "wb") as f:
             for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
                 f.write(chunk)
                 bytes_downloaded += len(chunk)
@@ -37,13 +41,32 @@ def download_if_needed():
                         text=f"Downloading IBTrACS dataset... {mb_done:.0f} MB / {mb_total:.0f} MB",
                     )
 
-        progress_bar.empty()  # remove the bar once done
-        df = pd.read_csv(LOCAL_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
+        progress_bar.progress(1.0, text="Filtering and saving dataset...")
+
+        # Read only the columns we need from the raw file
+        df = pd.read_csv(TEMP_RAW_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
+
+        # The row directly below the header is a units row (e.g. "Year",
+        # "kts", "mb"), not real data. Coercing SEASON to numeric turns
+        # that row's "Year" entry into NaN, and any row before 2000
+        # into a value we can filter out in the same step.
+        df["SEASON"] = pd.to_numeric(df["SEASON"], errors="coerce")
+        df = df.dropna(subset=["SEASON"])
+        df = df[df["SEASON"] >= 2000].copy()
+        df["SEASON"] = df["SEASON"].astype(int)
+
+        # Save only the filtered, narrowed data locally
+        df.to_csv(LOCAL_PATH, index=False)
+
+        # Discard the full raw download — only the filtered file is kept
+        os.remove(TEMP_RAW_PATH)
+
+        progress_bar.empty()
     else:
         df = pd.read_csv(LOCAL_PATH, low_memory=False, usecols=IBTRACS_COLUMNS)
 
     return df
-
+    
 
 @st.cache_data
 def load_data():
