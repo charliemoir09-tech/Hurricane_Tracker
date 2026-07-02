@@ -1,7 +1,8 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
 import os
 import plotly.graph_objects as go
+from datetime import timedelta
 
 
 URL = "https://data.humdata.org/dataset/96b309bf-cedb-4f63-8ca3-eb56cdcae876/resource/d1b9b02a-53c7-4134-ada5-234efd2efec2/download/ibtracs_all_list_v04r01.csv"
@@ -26,11 +27,11 @@ def load_data():
     #Clean bad header row
     df = df[df["SID"] != "sid"].copy()
 
-        # Convert types FIRST
+    # Convert types FIRST
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
     df["LON"] = pd.to_numeric(df["LON"], errors="coerce")
-    df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
-
+    df["ISO_TIME"] = pd.to_datetime(df["ISO_TIME"], format="%d/%m/%Y %H:%M", errors="coerce")
+ 
     return df
 
 st.title("🌪 Hurricane Tracker")
@@ -38,7 +39,6 @@ st.title("🌪 Hurricane Tracker")
 #step 2: Pick ONE storm (for now Tropical storm BERYL- SID= 2024181N09320)
 
 df = load_data()
-print (df.head())
 
 target_sid = "2024181N09320"
 
@@ -49,21 +49,41 @@ st.subheader("Storm Name: Tropical Storm BERYL | SID:2024181N09320")
 
 # Replace: st.write(storm)
 
-storm_clean = storm.dropna(subset=["LAT", "LON"]).reset_index(drop=True)
+storm_clean = storm.dropna(subset=["LAT", "LON", "ISO_TIME"]).reset_index(drop=True)
 
 if storm_clean.empty:
     st.warning("No valid track data for this storm.")
 else:
-    # Slider to step through the storm's timeline
-    idx = st.slider(
+    # Time bounds for the slider, as native Python datetimes
+    start_time = storm_clean["ISO_TIME"].min().to_pydatetime()
+    end_time = storm_clean["ISO_TIME"].max().to_pydatetime()
+
+    # Labels showing the full range of the storm, above the slider
+    label_col1, label_col2 = st.columns(2)
+    with label_col1:
+        st.caption(f"Start: {start_time.strftime('%b %d, %Y %H:%M UTC')}")
+    with label_col2:
+        st.markdown(
+            f"<div style='text-align: right; font-size: 0.85rem; color: gray;'>"
+            f"End: {end_time.strftime('%b %d, %Y %H:%M UTC')}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Slider operates on actual datetimes; the thumb label is formatted
+    # to show the currently-selected time as you drag it
+    selected_time = st.slider(
         "Track position",
-        min_value=0,
-        max_value=len(storm_clean) - 1,
-        value=0,
-        format=""
+        min_value=start_time,
+        max_value=end_time,
+        value=start_time,
+        step=timedelta(hours=3),
+        format="MMM DD, YYYY - HH:mm",
+        label_visibility="collapsed",
     )
 
-    current = storm_clean.iloc[idx]
+    # Snap to the nearest real observation to the selected slider time
+    nearest_idx = (storm_clean["ISO_TIME"] - selected_time).abs().idxmin()
+    current = storm_clean.loc[nearest_idx]
 
     fig = go.Figure()
 
