@@ -108,35 +108,33 @@ def saffir(windspeed):
 def translate_basin(code):
     return {
         "NA": "North Atlantic",
-        "SA": "South Atlantic",
-        "WP": "Western Pacific",
         "EP": "Eastern Pacific",
-        "SP": "South Pacific",
-        "SI": "South Indian",
+        "WP": "Western Pacific",
         "NI": "North Indian",
+        "SI": "South Indian",
+        "SP": "South Pacific",
+        "SA": "South Atlantic",
     }.get(code, "Unknown")
 
 
 def translate_subbasin(code):
     return {
-        "MM": "Main Monsoon",
-        "BB": "Bay of Bengal",
-        "AS": "Arabian Sea",
         "CS": "Caribbean Sea",
         "GM": "Gulf of Mexico",
+        "BB": "Bay of Bengal",
+        "AS": "Arabian Sea",
+        "WA": "Western Australia",
+        "EA": "Eastern Australia",
     }.get(code, "Unknown")
 
 
 def translate_nature(code):
     return {
-        "TS": "Tropical Storm",
-        "TD": "Tropical Depression",
-        "HU": "Hurricane / Typhoon",
-        "EX": "Extratropical",
-        "SD": "Subtropical Depression",
-        "SS": "Subtropical Storm",
-        "LO": "Low Pressure System",
-        "WV": "Tropical Wave",
+        "DS": "Disturbance",
+        "TS": "Tropical",
+        "ET": "Extratropical",
+        "SS": "Subtropical",
+        "MX": "Mixture",
     }.get(code, "Unknown")
 
 df = load_data()
@@ -149,7 +147,7 @@ storm_options = (
 )
 
 storm_label_map = {
-    f"{row['NAME']} ({row['SID']})": row["SID"]
+    f"{row['NAME']} ({row['SID'][:4]})": row["SID"]
     for _, row in storm_options.iterrows()
 }
 
@@ -167,7 +165,7 @@ target_sid = storm_label_map[selected_label]
 storm = df[df["SID"] == target_sid].sort_values("ISO_TIME")
 storm_name = storm["NAME"].iloc[0] if not storm.empty else "Unknown"
 
-st.subheader(f"{storm_name} | {target_sid}")
+st.subheader(f"{storm_name} ({target_sid[:4]})")
 
 storm_clean = storm.dropna(subset=["LAT", "LON", "ISO_TIME"]).reset_index(drop=True)
 
@@ -280,10 +278,11 @@ with col2:
     )
 
 with col1:
-    st.markdown("### Storm Details")
+    # st.markdown("### Storm Details")
 
+    st.write("Season:", str(int(storm["SEASON"].iloc[0])))
+    st.write("Storm ID:", storm["SID"].iloc[0])
     st.write("Nature:", translate_nature(storm["NATURE"].iloc[0]))
     st.write("Basin:", translate_basin(storm["BASIN"].iloc[0]))
     st.write("Subbasin:", translate_subbasin(storm["SUBBASIN"].iloc[0]))
-    st.write("Season:", str(int(storm["SEASON"].iloc[0])))
     st.write("Max. strength:", saffir(storm["WMO_WIND"].max()) if pd.notna(storm["WMO_WIND"].max()) else "N/A")
