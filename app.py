@@ -273,7 +273,7 @@ col1, col2 = st.columns([1, 2])  # left smaller, right bigger
 with col2:
     st.plotly_chart(
         fig,
-        use_container_width=True,
+        width="stretch",
         config={"displayModeBar": False}
     )
 
