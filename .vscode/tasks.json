@@ -7,7 +7,7 @@
       "command": "streamlit",
       "args": [
         "run",
-        "main.py"
+        "app.py"
       ],
       "group": {
         "kind": "build",
