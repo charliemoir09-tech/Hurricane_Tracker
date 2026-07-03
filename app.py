@@ -78,7 +78,7 @@ def download_if_needed():
 def load_data():
     df = download_if_needed()
 
-    for col in df.select_dtypes(include="object"):
+    for col in df.select_dtypes(include=["object", "str"]):
         df[col] = df[col].str.strip()
 
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
