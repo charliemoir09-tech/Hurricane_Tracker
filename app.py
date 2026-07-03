@@ -286,3 +286,14 @@ with col1:
     st.write("Basin:", translate_basin(storm["BASIN"].iloc[0]))
     st.write("Subbasin:", translate_subbasin(storm["SUBBASIN"].iloc[0]))
     st.write("Max. strength:", saffir(storm["WMO_WIND"].max()) if pd.notna(storm["WMO_WIND"].max()) else "N/A")
+
+st.divider()
+
+st.caption(
+    "Data source: International Best Track Archive for Climate Stewardship (IBTrACS), "
+    "National Centers for Environmental Information (NCEI), NOAA. "
+ )
+
+st.caption(
+    "Reference: Knapp, K. R., M. C. Kruk, D. H. Levinson, H. J. Diamond, and C. J. Neumann, 2010: The International Best Track Archive for Climate Stewardship (IBTrACS): Unifying tropical cyclone best track data. Bulletin of the American Meteorological Society, 91, 363-376. doi:10.1175/2009BAMS2755.1"
+ )
