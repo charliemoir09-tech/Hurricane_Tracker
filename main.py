@@ -96,27 +96,14 @@ st.set_page_config(page_title="Hurricane Tracker", layout="wide")
 st.title("🌪 Hurricane Tracker")
 
 
-st.markdown("""
-<style>
-    .stApp {
-        background: linear-gradient(to bottom, #102a43, #1c3a4a);
-    }
+def saffir(windspeed):
+    if windspeed >= 137: return "Category 5"
+    if windspeed >= 113: return "Category 4"
+    if windspeed >= 96: return "Category 3"
+    if windspeed >= 83: return "Category 2"
+    if windspeed >= 64: return "Category 1"
+    return "Tropical Storm"
 
-    /* FIX DROPDOWN LOOK */
-    div[data-baseweb="select"] {
-        background-color: rgba(255,255,255,0.9) !important;
-        border-radius: 8px;
-    }
-
-    html, body, .stApp {
-        color: white !important;
-    }
-
-    h1, h2, h3, h4 {
-        color: white !important;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 def translate_basin(code):
     return {
@@ -190,13 +177,14 @@ if storm_clean.empty:
 
 
 def make_label(row):
-    wind = f"{row['WMO_WIND']:.0f} kts" if pd.notna(row["WMO_WIND"]) else "N/A"
-    pres = f"{row['WMO_PRES']:.0f} mb" if pd.notna(row["WMO_PRES"]) else "N/A"
+    wind_str = f"{row['WMO_WIND']:.0f} kts" if pd.notna(row["WMO_WIND"]) else "N/A"
+    pressure_str = f"{row['WMO_PRES']:.0f} mb" if pd.notna(row["WMO_PRES"]) else "N/A"
 
     return (
         f"{row['ISO_TIME'].strftime('%b %d %H:%M UTC')}<br>"
         f"Lat {row['LAT']:.1f} Lon {row['LON']:.1f}<br>"
-        f"Wind {wind} Pressure {pres}"
+        f"Wind {wind_str} Pressure {pressure_str}<br>"
+        f"Category {saffir(row['WMO_WIND'])  if pd.notna(row["WMO_WIND"]) else 'N/A'}<br>"
     )
 
 
@@ -298,3 +286,4 @@ with col1:
     st.write("Basin:", translate_basin(storm["BASIN"].iloc[0]))
     st.write("Subbasin:", translate_subbasin(storm["SUBBASIN"].iloc[0]))
     st.write("Season:", str(int(storm["SEASON"].iloc[0])))
+    st.write("Max. strength:", saffir(storm["WMO_WIND"].max()) if pd.notna(storm["WMO_WIND"].max()) else "N/A")
